@@ -22,9 +22,6 @@ jobs:
         # Install Rust and Cargo
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         source $HOME/.cargo/env
-        default: 'https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git CLANG'
-        default: 'https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git GCC64'
-        default: 'https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git GCC'
         
     - name: Install Bore CLI using Cargo
       run: |
