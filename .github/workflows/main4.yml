@@ -1,0 +1,142 @@
+name: Anonymous Passwordless SSH Server with Bore.pub
+
+on:
+  workflow_dispatch:
+    inputs:
+      TOOLCHAIN_URL_CLANG:
+        description: "URL do toolchain CLANG"
+        required: true
+        default: "https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git"
+
+      TOOLCHAIN_URL_GCC64:
+        description: "URL do toolchain GCC64 (aarch64)"
+        required: true
+        default: "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git"
+
+      TOOLCHAIN_URL_GCC:
+        description: "URL do toolchain GCC ARM32"
+        required: true
+        default: "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git"
+
+  push:
+    branches: [ main ]
+
+jobs:
+  ssh-server:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Install SSH Server and Base Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openssh-server curl build-essential
+
+        sudo apt install nano bc bison ca-certificates curl flex gcc git libc6-dev libssl-dev openssl python-is-python3 ssh wget zip zstd sudo make clang gcc-arm-linux-gnueabi software-properties-common build-essential libarchive-tools gcc-aarch64-linux-gnu -y
+        sudo apt install libssl-dev libffi-dev libncurses5-dev zlib1g zlib1g-dev libreadline-dev libbz2-dev libsqlite3-dev make gcc pigz python3 cpio lld llvm g++-aarch64-linux-gnu libelf-dev neofetch -y
+
+        neofetch
+
+        # Install Rust
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source $HOME/.cargo/env
+
+    - name: Install Bore CLI using Cargo
+      run: |
+        source $HOME/.cargo/env
+        cargo install bore-cli
+
+    - name: Clone Kernel Toolchains
+      run: |
+        echo "🔧 Clonando toolchains..."
+        git clone ${{ github.event.inputs.TOOLCHAIN_URL_CLANG }} CLANG
+        git clone ${{ github.event.inputs.TOOLCHAIN_URL_GCC64 }} GCC64
+        git clone ${{ github.event.inputs.TOOLCHAIN_URL_GCC }} GCC
+
+    - name: Configure Passwordless SSH Server
+      run: |
+        sudo tee /etc/ssh/sshd_config > /dev/null <<EOF
+        Port 22
+        Protocol 2
+        PasswordAuthentication yes
+        PermitEmptyPasswords yes
+        PubkeyAuthentication no
+        ChallengeResponseAuthentication no
+        PermitRootLogin yes
+        StrictModes no
+        AllowUsers *
+        UsePAM no
+        X11Forwarding yes
+        PrintMotd yes
+        Subsystem sftp /usr/lib/openssh/sftp-server
+        EOF
+
+    - name: Create Users with Empty Passwords
+      run: |
+        sudo passwd -d root
+        sudo useradd -m -s /bin/bash topuser
+        sudo passwd -d topuser
+        sudo usermod -aG sudo topuser
+        echo 'topuser ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/topuser
+        sudo chmod 440 /etc/sudoers.d/topuser
+        
+        echo "🔍 Password status:"
+        sudo passwd -S root
+        sudo passwd -S topuser
+        
+    - name: Start and Enable SSH Service
+      run: |
+        sudo ssh-keygen -A
+        sudo systemctl enable ssh
+        sudo systemctl start ssh
+        
+        echo "🔍 SSH Service Status:"
+        sudo systemctl status ssh --no-pager
+        echo "🔍 Port:"
+        sudo ss -tlnp | grep :22
+        
+        echo "Testando..."
+        echo "" | timeout 10 ssh -o StrictHostKeyChecking=no topuser@localhost echo "SSH working!" || echo "Local SSH test inconclusive"
+
+    - name: Export Toolchain Paths (agora no final)
+      run: |
+        echo "export CLANG=$(pwd)/CLANG/bin" >> $HOME/.bashrc
+        echo "export GCC64=$(pwd)/GCC64/bin" >> $HOME/.bashrc
+        echo "export GCC=$(pwd)/GCC/bin" >> $HOME/.bashrc
+        echo 'export PATH="$CLANG:$GCC64:$GCC:$PATH"' >> $HOME/.bashrc
+
+        source $HOME/.bashrc
+
+    - name: Start Bore Tunnel and Display Connection Info
+      run: |
+        source $HOME/.cargo/env
+        
+        echo "🚀 Starting bore tunnel for SSH..."
+        $HOME/.cargo/bin/bore local 22 --to bore.pub > bore_output.txt 2>&1 &
+        
+        sleep 15
+        
+        echo "========================================"
+        echo "🎯 SSH SERVER IS READY!"
+        echo "========================================"
+        
+        if [ -f bore_output.txt ]; then
+          echo "📄 Bore Output:"
+          cat bore_output.txt
+          
+          TUNNEL_PORT=$(grep -oE 'bore\.pub:[0-9]+' bore_output.txt | cut -d: -f2)
+          
+          if [ "$TUNNEL_PORT" != "" ]; then
+            echo "🌐 SSH CONNECTION:"
+            echo "ssh root@bore.pub -p $TUNNEL_PORT"
+            echo "ssh topuser@bore.pub -p $TUNNEL_PORT"
+            echo "💡 SENHA = apenas ENTER"
+          else
+            echo "⚠️  Unable to extract port"
+          fi
+        fi
+        
+        echo "🔄 Server will stay alive for 6 hours..."
+        sleep 21600
