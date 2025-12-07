@@ -150,6 +150,7 @@ jobs:
         echo "   • SSH Service: $(sudo systemctl is-active ssh)"
         echo "   • Password Auth: Enabled with empty passwords"
         echo "   • Root Login: Enabled"
+        echo "   • git clone https://github.com/alessandroaraujo5/KERNEL--GUAMP.git"
         echo "   • Users: root, topuser (both passwordless)"
         echo "========================================"
         
